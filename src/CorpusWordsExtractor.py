@@ -47,6 +47,7 @@ class CorpusWordsExtractor:
     def get_words_from_corpus(self, articles_text):
         """
         Extract words from corpus text with frequencies.
+        FIXED: Preserves ALL punctuation by splitting ONLY on whitespace.
         
         Args:
             articles_text: List of article texts
@@ -65,8 +66,9 @@ class CorpusWordsExtractor:
             if hasattr(self.language_utils, 'remove_diacritics'):
                 article_text = self.language_utils.remove_diacritics(article_text)
             
-            # Split into words using common delimiters
-            article_words = re.split(r'[.\s\n\-,\:\"\(\)]', article_text)
+            # CRITICAL FIX: Split ONLY on whitespace, NOT on punctuation!
+            # This preserves ፡, ።, ፣, etc. as part of the words
+            article_words = article_text.split()
             
             for word in article_words:
                 word = word.strip()

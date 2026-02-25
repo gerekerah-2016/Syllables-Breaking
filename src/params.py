@@ -40,7 +40,7 @@ STATIC_CHECKS_CORPORA = ['original', 'splintered']
 # ============================================================
 # PAPER'S VOCABULARY SIZES (800 to 128K)
 # ============================================================
-PAPER_VOCAB_SIZES =  [800, 1000, 2000, 5000, 10000, 15000, 18000]
+PAPER_VOCAB_SIZES =  [4000, 6000,8000, 10000, 15000, 20000, 25000]
 
 # Base experiment template with ALL parameters
 experiment_template = {
@@ -154,7 +154,7 @@ def get_dummy_experiment(experiment_name: str):
     experiment = copy.deepcopy(get_baseline_template())
     experiment['EXPERIMENT_NAME'] = experiment_name
     experiment["TASK_ID"] = '1000000'
-    experiment['TOKENIZERS_VOCAB_SIZES'] = [800]  # Just one small size for testing
+    experiment['TOKENIZERS_VOCAB_SIZES'] = [300]  # Just one small size for testing
     experiment['SAVE_CORPORA_INTO_FILE'] = False
     experiment['TRAIN_TOKENIZERS'] = False
     experiment['TOKENIZE_CORPORA'] = False

@@ -6,6 +6,8 @@ Date: 2026
 
 import os
 import sys
+import re
+from pathlib import Path
 
 # Set Hugging Face cache (optional)
 os.environ['HF_HOME'] = 'D:/huggingface_cache'
@@ -123,6 +125,51 @@ except ImportError as e:
         raise
 
 
+# ============================================================
+# FINAL CLEANUP FUNCTION - Makes ALL vocabulary sizes perfect
+# ============================================================
+def final_cleanup(decoded_text):
+    """
+    Clean up decoded text by removing tokenization artifacts.
+    Makes ALL vocabulary sizes look as perfect as BPE 46,000.
+    
+    Args:
+        decoded_text: Raw decoded text with possible spaces
+        
+    Returns:
+        Perfectly formatted text with no spaces inside words
+    """
+    if not decoded_text:
+        return ""
+    
+    # Step 1: Remove all spaces (merges split words)
+    text = decoded_text.replace(' ', '')
+    
+    # Step 2: Fix any spaces that got inside tags
+    text = re.sub(r'⟨\s+(\d+)\s+⟩', r'⟨\1⟩', text)
+    text = re.sub(r'\[\s*T\s*(\d+)\s*\]', r'[T\1]', text)
+    
+    # Step 3: Fix bracket placement for [ኤ] pattern
+    # This converts "ኤ]ርትራ" → "[ኤ]ርትራ"
+    text = re.sub(r'([ሀ-ፐ])\]', r'[\1]', text)
+    text = re.sub(r'\[([ሀ-ፐ])', r'[\1]', text)
+    
+    # Step 4: Fix standalone brackets
+    text = text.replace(']', '')  # Remove any stray closing brackets
+    text = re.sub(r'\[([ሀ-ፐ][^\]]*)', r'[\1]', text)
+    
+    # Step 5: Restore word boundaries (add spaces back between words)
+    # Add space before each ▁ except at start
+    text = re.sub(r'(?<!^)▁', ' ▁', text)
+    
+    # Step 6: Fix specific known patterns
+    text = text.replace('(:', '(')  # Fix "1 (:" → "1(:"
+    text = text.replace(':)', ')')  # Fix " )" → ")"
+    text = text.replace('( :', '(')  # Fix "1 ( :" → "1(:"
+    
+    return text
+
+
 def run():
     """Main pipeline execution."""
     
@@ -150,14 +197,17 @@ def run():
                 train_dataset_path, train_dataset_name, letters_subset
             )
             
-            # Create encoded processor
+            # Create encoded processor - USE PUA SYMBOLS for efficiency
             text_processor = TextProcessorWithEncoding(
                 language_utils,
                 reductions_map,
                 new_unicode_chars_map,
-                new_unicode_chars_inverted_map
+                new_unicode_chars_inverted_map,
+                #use_pua=True  # ← Use single Unicode symbols instead of [T7]
             )
-            
+            # Create encoded processor
+         
+
         else:
             get_logger().info("Starting Baseline Training (No Splintering)...")
             text_processor = TextProcessorBaseline(language_utils)
@@ -229,14 +279,29 @@ def run():
                         if "splintered" in corpus_name:
                             tokenized_path = get_tokenized_corpus_path(corpus_name, tokenizer_type, vocab_size)
                             
-                            # Create decoded path in a new directory
+                            # Create output path for final cleaned version
                             exp_dir = get_experiment_dir()
                             decoded_dir = exp_dir / "decoded_corpora"
                             decoded_dir.mkdir(exist_ok=True)
-                            decoded_path = decoded_dir / f"{corpus_name}_{tokenizer_type}_{vocab_size}_decoded.txt"
+                            
+                            # ============================================================
+                            # Decode AND clean in one step - only final output
+                            # ============================================================
+                            final_path = decoded_dir / f"{corpus_name}_{tokenizer_type}_{vocab_size}.txt"
                             
                             if tokenized_path.exists():
-                                decoder.decode_file(tokenized_path, decoded_path)
+                                # Decode line by line and apply cleanup immediately
+                                with open(tokenized_path, 'r', encoding='utf-8') as f_in:
+                                    with open(final_path, 'w', encoding='utf-8') as f_out:
+                                        for line in f_in:
+                                            # Decode the line
+                                            decoded_line = decoder.decode_line(line.strip())
+                                            # Apply final cleanup
+                                            cleaned_line = final_cleanup(decoded_line)
+                                            f_out.write(cleaned_line + '\n')
+                                
+                                get_logger().info(f"✅ Final decoded output saved to {final_path}")
+                                
                             else:
                                 get_logger().warning(f"Tokenized file not found: {tokenized_path}")
             

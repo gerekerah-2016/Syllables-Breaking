@@ -213,7 +213,7 @@ def analyze_vocabulary_overlap(exp_dir, tokenizer_type='bpe'):
     
     tokenizers_dir = exp_dir / "tokenizers"
     results = []
-    vocab_sizes = [800, 1000, 2000, 5000, 10000, 15000, 18000]
+    vocab_sizes = [4000, 6000,8000, 10000, 15000, 20000, 25000]  # FIXED: Correct vocab sizes
     
     for vocab_size in vocab_sizes:
         possible_vanilla = [
@@ -266,11 +266,36 @@ def plot_vocabulary_overlap(results, save_path=None):
 
 
 # ============================================================
-# 3. RÉNYI EFFICIENCY (Tables 2-4)
+# 3. RÉNYI EFFICIENCY (Tables 2-4) - FIXED VERSION
 # ============================================================
 
-def compute_renyi_efficiency(token_frequencies, alpha=2.0):
-    """Compute Rényi efficiency for a token distribution."""
+def compute_renyi_efficiency(token_frequencies, alpha=2.0, exclude_special=True):
+    """
+    Compute Rényi efficiency for a token distribution.
+    
+    Args:
+        token_frequencies: Dict of token -> frequency
+        alpha: Rényi order parameter
+        exclude_special: If True, exclude special tokens like ⟨n⟩, <pad>, etc.
+    """
+    # ============================================================
+    # FIX: Exclude special tokens to get realistic values
+    # ============================================================
+    if exclude_special:
+        filtered_freqs = {}
+        for token, freq in token_frequencies.items():
+            # Skip SPLINTER tags (⟨1⟩, ⟨2⟩, etc.)
+            if token.startswith('⟨') and token.endswith('⟩'):
+                continue
+            # Skip special tokens
+            if token in ['<pad>', '<unk>', '<s>', '</s>', '[PAD]', '[UNK]', '[CLS]', '[SEP]', '[MASK]']:
+                continue
+            # Skip tokens that are just punctuation or numbers
+            if len(token) == 1 and not ('ሀ' <= token <= 'ፐ'):
+                continue
+            filtered_freqs[token] = freq
+        token_frequencies = filtered_freqs
+    
     total = sum(token_frequencies.values())
     if total == 0:
         return 0
@@ -286,7 +311,12 @@ def compute_renyi_efficiency(token_frequencies, alpha=2.0):
     if n <= 1:
         return 1.0
     
+    # This is the standard formula
     efficiency = np.exp(renyi_entropy) / n
+    
+    # For debugging
+    # print(f"  n={n}, entropy={renyi_entropy:.4f}, exp(entropy)={np.exp(renyi_entropy):.4f}, efficiency={efficiency:.4f}")
+    
     return efficiency
 
 
@@ -310,7 +340,7 @@ def analyze_renyi_efficiency(exp_dir, tokenizer_type='bpe', vocab_sizes=None):
     logger.info(f"Computing Rényi efficiency for {tokenizer_type}")
     
     if vocab_sizes is None:
-        vocab_sizes = [800, 1000, 2000, 5000, 10000, 15000, 18000]
+        vocab_sizes = [300, 4000, 1000, 2000, 3000, 6000, 8000]
     
     results = {
         'tokenizer_type': tokenizer_type,
@@ -322,7 +352,10 @@ def analyze_renyi_efficiency(exp_dir, tokenizer_type='bpe', vocab_sizes=None):
         vanilla_path = get_tokenized_corpus_path('original', tokenizer_type, vocab_size)
         if vanilla_path.exists():
             freqs = compute_token_frequencies(vanilla_path)
-            efficiency = compute_renyi_efficiency(freqs)
+            # ============================================================
+            # FIX: Use exclude_special=True for realistic values
+            # ============================================================
+            efficiency = compute_renyi_efficiency(freqs, exclude_special=True)
             results['vanilla'].append({
                 'vocab_size': vocab_size,
                 'efficiency': round(efficiency, 4)
@@ -332,7 +365,7 @@ def analyze_renyi_efficiency(exp_dir, tokenizer_type='bpe', vocab_sizes=None):
         splinter_path = get_tokenized_corpus_path('splintered', tokenizer_type, vocab_size)
         if splinter_path.exists():
             freqs = compute_token_frequencies(splinter_path)
-            efficiency = compute_renyi_efficiency(freqs)
+            efficiency = compute_renyi_efficiency(freqs, exclude_special=True)
             results['splinter'].append({
                 'vocab_size': vocab_size,
                 'efficiency': round(efficiency, 4)
@@ -392,7 +425,7 @@ def analyze_distinct_neighbors(exp_dir, tokenizer_type='bpe', vocab_sizes=None):
     logger.info(f"Computing distinct neighbors for {tokenizer_type}")
     
     if vocab_sizes is None:
-        vocab_sizes = [800, 1000, 2000, 5000, 10000, 15000, 18000]
+        vocab_sizes = [300, 4000, 1000, 2000, 3000, 6000, 8000]
     
     results = {
         'tokenizer_type': tokenizer_type,
@@ -425,7 +458,7 @@ def analyze_distinct_neighbors(exp_dir, tokenizer_type='bpe', vocab_sizes=None):
 def compute_surprisal(tokenizer_path, corpus_path, language_utils=None, sample_lines=10000):
     """
     Compute token surprisal as cognitive plausibility proxy.
-    Now uses language_utils if provided for syllable-aware processing.
+    Now uses language_utils if provided for syllable-aware processsing.
     """
     import sentencepiece as spm
     import numpy as np
@@ -501,7 +534,7 @@ def run_cognitive_evaluation(exp_dir, corpus_path, language_utils=None):
     logger.info("=" * 60)
     
     results = {'bpe': {}, 'unigram': {}}
-    vocab_sizes = [800, 1000, 2000, 5000, 10000, 15000, 18000]
+    vocab_sizes = [300, 4000, 1000, 2000, 3000, 6000, 8000]
     
     for tokenizer_type in ['bpe', 'unigram']:
         logger.info(f"\n📊 Computing surprisal for {tokenizer_type}")

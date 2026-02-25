@@ -1,5 +1,5 @@
 """
-Decode tokenized corpora back to original text.
+Decoding utilities for SPLINTER tokenized output.
 Author: Gebreslassie Teklu Reda
 Date: 2026
 """
@@ -8,19 +8,59 @@ import json
 import re
 from pathlib import Path
 from src.logger import get_logger
-from src.language_utils.EthiopicUtils import EthiopicUtils
-from src.utils.path_utils import get_splinter_dir, get_tokenized_corpus_path, get_decoded_corpus_path
+from src.language_utils.LanguageUtilsInterface import LanguageUtilsInterface
+from src.utils.path_utils import get_splinter_dir
 
 
-class CorpusDecoder:
+class SplinterDecoder:
     """
-    Decodes tokenized corpora back to original text.
+    Decodes SPLINTER-encoded text back to original Ge'ez.
+    Handles ⟨n⟩, [Tn], _Tn, and Mathematical Symbol formats.
     """
     
-    def __init__(self, language_utils):
+    def __init__(self, language_utils: LanguageUtilsInterface):
         self.language_utils = language_utils
         self.decode_map = None
         self.logger = get_logger()
+        self.symbol_to_tag = {}
+        self.tag_to_symbol = {}
+        self.symbol_pattern = None
+        
+        # Load symbol mapping
+        self._load_symbol_mapping()
+    
+    def _load_symbol_mapping(self):
+        """Load symbol mapping."""
+        try:
+            possible_paths = [
+                Path("tag_mapping.json"),
+                Path(__file__).parent / "tag_mapping.json",
+                Path(__file__).parent.parent / "tag_mapping.json",
+                Path("src/tag_mapping.json")
+            ]
+            
+            mapping_path = None
+            for path in possible_paths:
+                if path.exists():
+                    mapping_path = path
+                    break
+            
+            if mapping_path:
+                with open(mapping_path, 'r', encoding='utf-8') as f:
+                    mapping_data = json.load(f)
+                    self.symbol_to_tag = mapping_data['symbol_to_tag']
+                    self.tag_to_symbol = {v: k for k, v in self.symbol_to_tag.items()}
+                
+                # Create symbol pattern
+                if self.symbol_to_tag:
+                    symbols = ''.join(re.escape(sym) for sym in self.symbol_to_tag.keys())
+                    self.symbol_pattern = re.compile(f'[{symbols}]')
+                
+                self.logger.info(f"✅ Loaded {len(self.symbol_to_tag)} symbol mappings")
+            else:
+                self.logger.warning("⚠️ Tag mapping file not found")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Could not load symbol mapping: {e}")
     
     def load_decode_map(self):
         """Load the decode map from splinter directory."""
@@ -28,161 +68,144 @@ class CorpusDecoder:
         decode_map_path = splinter_dir / "new_unicode_chars_inverted.json"
         
         if not decode_map_path.exists():
-            self.logger.error(f"Decode map not found: {decode_map_path}")
+            self.logger.error(f"❌ Decode map not found: {decode_map_path}")
             return False
         
         with open(decode_map_path, 'r', encoding='utf-8') as f:
             self.decode_map = json.load(f)
         
-        self.logger.info(f"Loaded decode map with {len(self.decode_map)} mappings")
+        self.logger.info(f"✓ Loaded decode map with {len(self.decode_map)} mappings")
         return True
+    
+    def _is_mathematical_symbol(self, char):
+        """Check if character is in Mathematical Alphanumeric range."""
+        return 0x1D400 <= ord(char) <= 0x1D7FF
+    
+    def _is_pua_symbol(self, char):
+        """Check if character is in Private Use Area."""
+        return 0xE000 <= ord(char) <= 0xF8FF
+    
+    def _is_tag_symbol(self, char):
+        """Check if character is a tag symbol."""
+        return self._is_mathematical_symbol(char) or self._is_pua_symbol(char)
+    
+    def _symbols_to_tags(self, text: str) -> str:
+        """Convert symbols to ⟨n⟩ format."""
+        if not self.symbol_pattern or not self.symbol_to_tag:
+            return text
+        
+        def replace(match):
+            sym = match.group(0)
+            tag_num = self.symbol_to_tag.get(sym)
+            return f"⟨{tag_num}⟩" if tag_num else sym
+        
+        return self.symbol_pattern.sub(replace, text)
     
     def decode_word(self, word: str) -> str:
         """
-        Decode a single word from its encoded form.
-        
-        Args:
-            word: Encoded word (e.g., "ነገረ⟨4⟩" or "አረተ⟨11⟩⟨18⟩⟨4⟩")
-            
-        Returns:
-            Decoded word with vowels restored
+        Decode a single word.
         """
-        # Extract consonant skeleton (all Ethiopic letters)
-        skeleton = ''.join([c for c in word if self.language_utils.is_letter_in_language(c)])
+        # Convert any symbols to ⟨n⟩ format
+        normalized = self._symbols_to_tags(word)
+        
+        # Extract skeleton (all Ethiopic letters)
+        skeleton = ''.join([c for c in normalized if self.language_utils.is_letter_in_language(c)])
+        
+        if not skeleton:
+            return word
         
         # Extract tags
-        tags = re.findall(r'⟨\d+⟩', word)
+        tags = re.findall(r'⟨\d+⟩', normalized)
         
         if not tags:
-            return word
+            return skeleton
         
-        # Decode
-        try:
-            return self.language_utils.decode_from_splinter(skeleton, tags, self.decode_map)
-        except Exception as e:
-            self.logger.warning(f"Failed to decode '{word}': {e}")
-            return word
-    
-    def decode_line(self, line: str) -> str:
-        """
-        Decode an entire line of tokenized text.
+        # Apply tags to transform skeleton
+        result = list(skeleton)
+        skeleton_length = len(result)
         
-        Args:
-            line: Tokenized line with words and tags
-            
-        Returns:
-            Decoded line with vowels restored
-        """
-        if not line.strip():
-            return line
-        
-        # Split into words (preserve word boundaries)
-        words = line.strip().split()
-        decoded_words = []
-        
-        i = 0
-        while i < len(words):
-            word = words[i]
-            
-            # Check if this word has tags attached or following
-            if word.startswith('⟨') and word.endswith('⟩'):
-                # This is a standalone tag - should be attached to previous word
-                if decoded_words:
-                    decoded_words[-1] += word
-                else:
-                    # Rare case: line starts with a tag
-                    decoded_words.append(word)
-                i += 1
+        for tag in tags:
+            if tag not in self.decode_map:
+                self.logger.debug(f"Tag {tag} not found")
                 continue
             
-            # Look ahead for tags that belong to this word
-            full_word = word
-            while i + 1 < len(words) and words[i + 1].startswith('⟨'):
-                full_word += words[i + 1]
-                i += 1
+            key = self.decode_map[tag]
+            if ':' not in key:
+                continue
             
-            # Decode the full word
-            decoded_words.append(self.decode_word(full_word))
-            i += 1
+            pos_str, vowel_marker = key.split(':', 1)
+            try:
+                pos = int(pos_str)
+            except ValueError:
+                continue
+            
+            if pos >= skeleton_length:
+                self.logger.debug(f"Position {pos} out of range, skipping")
+                continue
+            
+            base_char = result[pos]
+            order = self.language_utils.get_vowel_order_from_marker(vowel_marker)
+            if order is None:
+                continue
+            
+            new_char = self.language_utils.apply_vowel_to_consonant(base_char, order)
+            result[pos] = new_char
         
-        return ' '.join(decoded_words)
+        return ''.join(result)
     
-    def decode_corpus(self, input_path: Path, output_path: Path):
-        """
-        Decode an entire tokenized corpus file.
+    def decode_line(self, line: str) -> str:
+        """Decode an entire line."""
+        if not line or not line.strip():
+            return line
         
-        Args:
-            input_path: Path to tokenized corpus
-            output_path: Path to save decoded corpus
-        """
-        self.logger.info(f"Decoding {input_path} -> {output_path}")
+        # Split into tokens
+        tokens = line.strip().split()
+        
+        # Group tokens into words (handling ▁ markers)
+        words = []
+        current = []
+        
+        for token in tokens:
+            if token.startswith('▁'):
+                if current:
+                    words.append(''.join(current))
+                current = [token[1:]] if len(token) > 1 else []
+            else:
+                current.append(token)
+        
+        if current:
+            words.append(''.join(current))
+        
+        # Decode each word
+        decoded = []
+        for word in words:
+            if word:
+                decoded.append(self.decode_word(word))
+        
+        return ' '.join(decoded)
+    
+    def decode_file(self, input_path: Path, output_path: Path):
+        """Decode an entire file."""
+        self.logger.info(f"📥 Decoding: {input_path}")
         
         line_count = 0
-        word_count = 0
-        tagged_word_count = 0
+        
+        output_path.parent.mkdir(parents=True, exist_ok=True)
         
         with open(input_path, 'r', encoding='utf-8') as fin, \
              open(output_path, 'w', encoding='utf-8') as fout:
             
             for line in fin:
                 line = line.rstrip('\n')
-                
-                # Count words in original line
-                original_words = line.split()
-                word_count += len(original_words)
-                
-                # Count words with tags
-                for word in original_words:
-                    if re.search(r'⟨\d+⟩', word):
-                        tagged_word_count += 1
-                
-                # Decode the line
-                decoded_line = self.decode_line(line)
-                fout.write(decoded_line + '\n')
+                if line:
+                    decoded = self.decode_line(line)
+                    fout.write(decoded + '\n')
+                else:
+                    fout.write('\n')
                 
                 line_count += 1
                 if line_count % 1000 == 0:
-                    self.logger.info(f"  Decoded {line_count} lines")
+                    self.logger.info(f"  Processed {line_count} lines...")
         
-        self.logger.info(f"✓ Decoded {line_count} lines")
-        self.logger.info(f"  Words processed: {word_count}")
-        self.logger.info(f"  Words with tags: {tagged_word_count} ({tagged_word_count/word_count*100:.1f}%)")
-    
-    def decode_all_tokenized_corpora(self, tokenizer_types=None, vocab_sizes=None):
-        """
-        Decode all tokenized corpora in the experiment.
-        
-        Args:
-            tokenizer_types: List of tokenizer types (e.g., ['bpe', 'unigram'])
-            vocab_sizes: List of vocabulary sizes
-        """
-        if not self.load_decode_map():
-            return
-        
-        if tokenizer_types is None:
-            tokenizer_types = ['bpe', 'unigram']
-        
-        if vocab_sizes is None:
-            vocab_sizes = [10000]  # Default to your trained size
-        
-        for tokenizer_type in tokenizer_types:
-            for vocab_size in vocab_sizes:
-                # Check if tokenized corpus exists
-                input_path = get_tokenized_corpus_path("splintered", tokenizer_type, vocab_size)
-                
-                if not input_path.exists():
-                    self.logger.warning(f"Tokenized corpus not found: {input_path}")
-                    continue
-                
-                # Decode it
-                output_path = get_decoded_corpus_path("splintered", tokenizer_type, vocab_size)
-                self.decode_corpus(input_path, output_path)
-
-
-# For standalone use
-if __name__ == "__main__":
-    from src.language_utils.EthiopicUtils import EthiopicUtils
-    
-    utils = EthiopicUtils()
-    decoder = CorpusDecoder(utils)
-    decoder.decode_all_tokenized_corpora()
+        self.logger.info(f"✓ Complete: {line_count} lines")
+        return line_count
