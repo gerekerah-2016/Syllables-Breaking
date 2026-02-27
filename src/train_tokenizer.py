@@ -1,5 +1,5 @@
 """
-Train tokenizer - FIXED to preserve all Ethiopic punctuation and prevent spaces in tags
+Train tokenizer - FIXED to preserve all Ethiopic punctuation
 Author: Gebreslassie Teklu Reda
 Date: 2026
 """
@@ -19,41 +19,41 @@ def train_tokenizer(tokenizer_type, vocab_size, input_path, output_path):
     logger.info(f"Mode: {'SPLINTER' if is_splintered else 'BASELINE'}")
     
     if is_splintered:
-        # SPLINTERED mode - preserve all Ethiopic punctuation
+        # SPLINTERED mode - CJK characters are normal Unicode, no special handling needed
         spm.SentencePieceTrainer.Train(
             input=input_path,
             model_prefix=output_path,
             vocab_size=vocab_size,
             model_type=tokenizer_type,
-            character_coverage=1.0,#1.0
+            character_coverage=1.0,
             byte_fallback=False,
             split_digits=False,
             split_by_unicode_script=False,
             split_by_whitespace=True,
             treat_whitespace_as_suffix=True,
-            # ADD THESE FOR FASTER TRAINING
-            #input_sentence_size=000000,   # Only use 1 million sentences
-            #shuffle_input_sentence=True,    # Randomly select sentences
-            # ADD THESE TO PREVENT SPACES IN TAGS
+            # FASTER TRAINING
+            input_sentence_size=5000000,
+            shuffle_input_sentence=True,
+            # PREVENT SPACES IN TAGS
             allow_whitespace_only_pieces=False,
             remove_extra_whitespaces=False,
-            # Include ALL Ethiopic punctuation as user-defined symbols
-            user_defined_symbols=['፡', '።', '፣', '፤', '፥', '፦', '፧', '፠', '፨', '⟨', '⟩'],
-            max_sentence_length=8192,#8192
-            num_threads=4,#4
+            # Ethiopic punctuation only - NO angle brackets!
+            user_defined_symbols=['፡', '።', '፣', '፤', '፥', '፦', '፧', '፠', '፨'],
+            max_sentence_length=8192,
+            num_threads=4,
             pad_id=0,
             unk_id=1,
             bos_id=2,
             eos_id=3,
         )
     else:
-        # BASELINE mode
+        # BASELINE mode - unchanged
         spm.SentencePieceTrainer.Train(
             input=input_path,
             model_prefix=output_path,
             vocab_size=vocab_size,
             model_type=tokenizer_type,
-            character_coverage=1.0,#1.0,
+            character_coverage=1.0,
             byte_fallback=False,
             split_digits=True,
             split_by_unicode_script=True,

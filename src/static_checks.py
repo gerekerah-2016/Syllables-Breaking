@@ -213,7 +213,7 @@ def analyze_vocabulary_overlap(exp_dir, tokenizer_type='bpe'):
     
     tokenizers_dir = exp_dir / "tokenizers"
     results = []
-    vocab_sizes = [4000, 6000,8000, 10000, 15000, 20000, 25000]  # FIXED: Correct vocab sizes
+    vocab_sizes = [800, 1500,2000, 10000, 15000, 20000, 25000]  # FIXED: Correct vocab sizes
     
     for vocab_size in vocab_sizes:
         possible_vanilla = [
@@ -340,7 +340,7 @@ def analyze_renyi_efficiency(exp_dir, tokenizer_type='bpe', vocab_sizes=None):
     logger.info(f"Computing Rényi efficiency for {tokenizer_type}")
     
     if vocab_sizes is None:
-        vocab_sizes = [300, 4000, 1000, 2000, 3000, 6000, 8000]
+        vocab_sizes = [800, 1500,2000, 10000, 15000, 20000, 25000]
     
     results = {
         'tokenizer_type': tokenizer_type,
@@ -425,7 +425,7 @@ def analyze_distinct_neighbors(exp_dir, tokenizer_type='bpe', vocab_sizes=None):
     logger.info(f"Computing distinct neighbors for {tokenizer_type}")
     
     if vocab_sizes is None:
-        vocab_sizes = [300, 4000, 1000, 2000, 3000, 6000, 8000]
+        vocab_sizes = [800, 1500,2000, 10000, 15000, 20000, 25000]
     
     results = {
         'tokenizer_type': tokenizer_type,
@@ -534,7 +534,7 @@ def run_cognitive_evaluation(exp_dir, corpus_path, language_utils=None):
     logger.info("=" * 60)
     
     results = {'bpe': {}, 'unigram': {}}
-    vocab_sizes = [300, 4000, 1000, 2000, 3000, 6000, 8000]
+    vocab_sizes = [800, 1500,2000, 10000, 15000, 20000, 25000]
     
     for tokenizer_type in ['bpe', 'unigram']:
         logger.info(f"\n📊 Computing surprisal for {tokenizer_type}")

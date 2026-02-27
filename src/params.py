@@ -40,7 +40,7 @@ STATIC_CHECKS_CORPORA = ['original', 'splintered']
 # ============================================================
 # PAPER'S VOCABULARY SIZES (800 to 128K)
 # ============================================================
-PAPER_VOCAB_SIZES =  [4000, 6000,8000, 10000, 15000, 20000, 25000]
+PAPER_VOCAB_SIZES =  [800, 1500,2000, 10000, 15000, 20000, 25000]
 
 # Base experiment template with ALL parameters
 experiment_template = {

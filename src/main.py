@@ -1,6 +1,6 @@
 """
 Main entry point for Ethiopic Syllable Breaking Pipeline.
-Author: Gebreslassie Teklu Reda
+Author: Gebreslassie Teklu Reda - PURE CJK VERSION
 Date: 2026
 """
 
@@ -126,48 +126,37 @@ except ImportError as e:
 
 
 # ============================================================
-# FINAL CLEANUP FUNCTION - Makes ALL vocabulary sizes perfect
+# SIMPLIFIED CLEANUP FUNCTION - Pure CJK version
 # ============================================================
 def final_cleanup(decoded_text):
     """
-    Clean up decoded text by removing tokenization artifacts.
-    Makes ALL vocabulary sizes look as perfect as BPE 46,000.
-    
-    Args:
-        decoded_text: Raw decoded text with possible spaces
-        
-    Returns:
-        Perfectly formatted text with no spaces inside words
+    Clean up decoded text - simplified for pure CJK approach.
+    No brackets, no tags - just CJK characters.
     """
     if not decoded_text:
         return ""
     
-    # Step 1: Remove all spaces (merges split words)
-    text = decoded_text.replace(' ', '')
+    text = decoded_text
+
+    # STEP 1: Remove SentencePiece boundary markers
+    text = text.replace('▁', '')
+
+    # STEP 2: Fix spacing between CJK characters if they were tokenized separately
+    cjk_range = r'[\u4e00-\u9fff]'
+    text = re.sub(f'({cjk_range})\\s+(?={cjk_range})', r'\1', text)
     
-    # Step 2: Fix any spaces that got inside tags
-    text = re.sub(r'⟨\s+(\d+)\s+⟩', r'⟨\1⟩', text)
-    text = re.sub(r'\[\s*T\s*(\d+)\s*\]', r'[T\1]', text)
+    # STEP 3: Fix Ethiopic punctuation spacing - remove space BEFORE, preserve after
+    text = re.sub(r'\s+([፡።፣፤፥፦፧፠፨])', r'\1', text)
     
-    # Step 3: Fix bracket placement for [ኤ] pattern
-    # This converts "ኤ]ርትራ" → "[ኤ]ርትራ"
-    text = re.sub(r'([ሀ-ፐ])\]', r'[\1]', text)
-    text = re.sub(r'\[([ሀ-ፐ])', r'[\1]', text)
+    # STEP 4: Fix specific patterns with numbers and parentheses
+    text = re.sub(r'(\d+)\s*\(\s*:', r'\1(:', text)
+    text = re.sub(r'\(\s*:', r'(:', text)
+    text = re.sub(r':\s*\)', r':)', text)
     
-    # Step 4: Fix standalone brackets
-    text = text.replace(']', '')  # Remove any stray closing brackets
-    text = re.sub(r'\[([ሀ-ፐ][^\]]*)', r'[\1]', text)
+    # STEP 5: Collapse multiple spaces
+    text = re.sub(r'\s+', ' ', text)
     
-    # Step 5: Restore word boundaries (add spaces back between words)
-    # Add space before each ▁ except at start
-    text = re.sub(r'(?<!^)▁', ' ▁', text)
-    
-    # Step 6: Fix specific known patterns
-    text = text.replace('(:', '(')  # Fix "1 (:" → "1(:"
-    text = text.replace(':)', ')')  # Fix " )" → ")"
-    text = text.replace('( :', '(')  # Fix "1 ( :" → "1(:"
-    
-    return text
+    return text.strip()
 
 
 def run():
@@ -197,16 +186,13 @@ def run():
                 train_dataset_path, train_dataset_name, letters_subset
             )
             
-            # Create encoded processor - USE PUA SYMBOLS for efficiency
+            # Create encoded processor
             text_processor = TextProcessorWithEncoding(
                 language_utils,
                 reductions_map,
                 new_unicode_chars_map,
-                new_unicode_chars_inverted_map,
-                #use_pua=True  # ← Use single Unicode symbols instead of [T7]
+                new_unicode_chars_inverted_map
             )
-            # Create encoded processor
-         
 
         else:
             get_logger().info("Starting Baseline Training (No Splintering)...")

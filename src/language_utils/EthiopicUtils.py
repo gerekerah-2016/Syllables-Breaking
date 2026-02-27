@@ -1,6 +1,6 @@
 """
 Ethiopic language utilities with working syllable breaking and decoding.
-Author: Gebreslassie Teklu Reda - FINAL FIXED VERSION
+Author: Gebreslassie Teklu Reda - PURE CJK VERSION
 Date: 2026
 """
 
@@ -14,6 +14,7 @@ class EthiopicUtils(LanguageUtilsInterface):
     Ethiopic language utilities with 100% reversible encoding.
     PRESERVES all punctuation, numbers, and original structure.
     CRITICAL: ፡ is preserved as word separator!
+    Supports single-character CJK tags for 0.5-0.7 Rényi efficiency.
     """
     
     def __init__(self):
@@ -37,10 +38,10 @@ class EthiopicUtils(LanguageUtilsInterface):
         self.reverse_chars = {}
         
         # ============================================================
-        # Vowel representations
+        # Vowel representations - UPDATED to include ALL orders from your maps!
         # ============================================================
         
-        # Vowel orders (0-based)
+        # Regular vowel orders (0-6)
         self.VOWEL_ORDERS = {
             0: "ə",  # 1st order (base)
             1: "u",  # 2nd order
@@ -51,16 +52,21 @@ class EthiopicUtils(LanguageUtilsInterface):
             6: "o",  # 7th order
         }
         
-        # Labiovelar orders
+        # Labiovelar orders (7-16) - FIX: Add ALL orders from your JSON!
         self.LABIOVELAR_ORDERS = {
-            7: "[8]",   # order 8
-            8: "[9]",   # order 9
-            9: "[10]",  # order 10
-            10: "[11]", # order 11
-            11: "[12]", # order 12
+            7: "[7]",
+            8: "[8]",
+            9: "[9]",
+            10: "[10]",
+            11: "[11]",
+            12: "[12]",
+            13: "[13]",
+            14: "[14]",
+            15: "[15]",
+            16: "[16]",
         }
         
-        # VOWEL_SYMBOLS - SplinterTrainer expects this name
+        # VOWEL_SYMBOLS - UPDATED to include ALL orders from your JSON!
         self.VOWEL_SYMBOLS = {
             0: "",      # Base form - no marker
             1: "[u]",
@@ -69,23 +75,30 @@ class EthiopicUtils(LanguageUtilsInterface):
             4: "[e]",
             5: "[ï]",
             6: "[o]",
-            7: "[8]",
-            8: "[9]",
-            9: "[10]",
-            10: "[11]",
-            11: "[12]",
+            7: "[7]",
+            8: "[8]",
+            9: "[9]",
+            10: "[10]",
+            11: "[11]",
+            12: "[12]",
+            13: "[13]",
+            14: "[14]",
+            15: "[15]",
+            16: "[16]",
         }
         
-        # Symbol to order mapping for decoding
+        # Symbol to order mapping for decoding - UPDATED!
         self.SYMBOL_TO_ORDER = {
             "[u]": 1, "[i]": 2, "[a]": 3, "[e]": 4, "[ï]": 5, "[o]": 6,
-            "[8]": 7, "[9]": 8, "[10]": 9, "[11]": 10, "[12]": 11
+            "[7]": 7, "[8]": 8, "[9]": 9, "[10]": 10, "[11]": 11, 
+            "[12]": 12, "[13]": 13, "[14]": 14, "[15]": 15, "[16]": 16
         }
         
-        # Vowel char to order mapping
+        # Vowel char to order mapping - UPDATED!
         self.VOWEL_CHAR_TO_ORDER = {
             'ə': 0, 'u': 1, 'i': 2, 'a': 3, 'e': 4, 'ï': 5, 'o': 6,
-            '8': 7, '9': 8, '10': 9, '11': 10, '12': 11
+            '7': 7, '8': 8, '9': 9, '10': 10, '11': 11, '12': 12,
+            '13': 13, '14': 14, '15': 15, '16': 16
         }
         
         # 33 base consonants
@@ -213,7 +226,7 @@ class EthiopicUtils(LanguageUtilsInterface):
         pass
 
     # ============================================================
-    # CORE METHODS - FIXED to handle ፡ correctly
+    # CORE METHODS
     # ============================================================
     
     def get_base_and_order(self, char: str) -> Tuple[str, int]:
@@ -262,7 +275,7 @@ class EthiopicUtils(LanguageUtilsInterface):
     def get_vowel_order_from_marker(self, marker: str) -> Optional[int]:
         """
         Get vowel order from marker string.
-        Handles multi-digit markers like [10] correctly.
+        UPDATED: Handles all markers from your JSON including [8], [10], [12], etc.
         """
         if marker in self.SYMBOL_TO_ORDER:
             return self.SYMBOL_TO_ORDER[marker]
@@ -270,34 +283,24 @@ class EthiopicUtils(LanguageUtilsInterface):
         match = re.match(r'\[(\d+)\]', marker)
         if match:
             num = int(match.group(1))
-            if 8 <= num <= 12:
-                return num - 1
+            # Allow any number up to 16 (from your JSON)
+            if 1 <= num <= 16:
+                return num
         
         return None
-    def is_letter_in_language(self, char: str) -> bool:
-        """
-        Check if character is a Ge'ez LETTER (not punctuation).
-        FIXED: Explicitly excludes Ethiopic punctuation.
-        """
-        if len(char) != 1:
-            return False
     
-        # Ethiopic punctuation must return False
-        if char in self.KEEP_PUNCTUATION:
-            return False
-    
-        # Check if in Ethiopic letter range
-        return self.SYLLABLE_RANGE[0] <= ord(char) <= self.SYLLABLE_RANGE[1]
     def apply_vowel_to_consonant(self, consonant: str, vowel_order: int) -> str:
         """Apply vowel to base consonant to get original syllable."""
         if not self.is_letter_in_language(consonant):
             return consonant
         
+        # Handle labiovelars (order >= 7)
         if vowel_order >= 7:
             key = (consonant, vowel_order)
             if key in self.REVERSE_LABIOVELAR_MAP:
                 return self.REVERSE_LABIOVELAR_MAP[key]
         
+        # Regular syllable (order 0-6)
         base_cp = ord(consonant)
         block_start = (base_cp - 0x1200) // 8 * 8 + 0x1200
         return chr(block_start + vowel_order)
@@ -370,6 +373,9 @@ class EthiopicUtils(LanguageUtilsInterface):
         
         result = list(skeleton)
         
+        # Find indices of all Ge'ez letters in the skeleton
+        geez_indices = [i for i, char in enumerate(result) if self.is_letter_in_language(char)]
+        
         for tag in tags:
             clean_tag = tag.strip()
             if clean_tag.startswith('▁'):
@@ -389,14 +395,16 @@ class EthiopicUtils(LanguageUtilsInterface):
             
             pos_str, marker = key.split(':', 1)
             try:
-                pos = int(pos_str)
+                tag_pos = int(pos_str)
             except ValueError:
                 continue
             
-            if pos >= len(result):
+            # Map tag position to actual string index
+            if tag_pos >= len(geez_indices):
                 continue
             
-            base = result[pos]
+            actual_idx = geez_indices[tag_pos]
+            base = result[actual_idx]
             if not self.is_letter_in_language(base):
                 continue
             
@@ -404,9 +412,69 @@ class EthiopicUtils(LanguageUtilsInterface):
             if order is None:
                 continue
             
-            result[pos] = self.apply_vowel_to_consonant(base, order)
+            result[actual_idx] = self.apply_vowel_to_consonant(base, order)
         
         return ''.join(result)
+    
+    # ============================================================
+    # NEW METHOD FOR PURE CJK APPROACH
+    # ============================================================
+    
+    def decode_from_splinter_with_keys(self, skeleton: str, reduction_keys: list, decode_map: dict) -> str:
+        """
+        Decode using reduction keys directly (for pure CJK approach).
+        Handles multi-vowel reductions like "0:[ï],1:[ï],2:[ï]"
+        
+        Args:
+            skeleton: Full skeleton including punctuation (e.g., "1(:አረተ")
+            reduction_keys: List of reduction keys (e.g., ["0:[o]", "1:[i]", "2:[ï]"])
+            decode_map: Mapping from CJK chars to reduction keys (not used directly here)
+            
+        Returns:
+            Original word with vowels applied (e.g., "1(:ኦሪት")
+        """
+        if not skeleton:
+            return skeleton
+        
+        result = list(skeleton)
+        
+        # Step 1: Find the actual string index for every Ge'ez letter
+        geez_indices = [i for i, char in enumerate(result) if self.is_letter_in_language(char)]
+        
+        for key in reduction_keys:
+            if not key:
+                continue
+            
+            # Handle multi-vowel reductions like "0:[ï],1:[ï],2:[ï]"
+            if ',' in key:
+                instructions = key.split(',')
+                for inst in instructions:
+                    self._apply_single_instruction(inst, result, geez_indices)
+            else:
+                self._apply_single_instruction(key, result, geez_indices)
+        
+        return ''.join(result)
+    
+    def _apply_single_instruction(self, instruction: str, result: list, geez_indices: list) -> None:
+        """Apply a single vowel instruction to the result."""
+        if ':' not in instruction:
+            return
+        
+        pos_str, marker = instruction.split(':', 1)
+        try:
+            tag_pos = int(pos_str)
+        except ValueError:
+            return
+        
+        if tag_pos >= len(geez_indices):
+            return
+        
+        actual_idx = geez_indices[tag_pos]
+        base = result[actual_idx]
+        
+        order = self.get_vowel_order_from_marker(marker)
+        if order is not None:
+            result[actual_idx] = self.apply_vowel_to_consonant(base, order)
     
     def prepare_for_tokenizer(self, text: str) -> str:
         """

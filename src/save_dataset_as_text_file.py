@@ -47,6 +47,10 @@ def save_corpus_as_text_file(text_processor, corpus_path: str, corpus_name: str)
             if (i + 1) % 10000 == 0:
                 logger.info(f"  Processed {i+1}/{len(words)} words")
     
+    # Print summary statistics (only once)
+    if hasattr(text_processor, 'print_summary'):
+        text_processor.print_summary()
+    
     # Also save original corpus
     original_path = get_corpus_path("original")
     with open(original_path, 'w', encoding='utf-8') as f:

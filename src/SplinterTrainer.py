@@ -28,7 +28,7 @@ class SplinterTrainer:
     - Base form is 1st order [ə]
     - Vowel patterns appear at specific positions
     
-    Creates mappings like '0:[a]' → '⟨1⟩' for vowel reductions.
+    Creates mappings like '0:[a]' → CJK character directly (e.g., '一').
     Only creates tags for patterns that appear frequently enough.
     """
     
@@ -41,8 +41,8 @@ class SplinterTrainer:
             min_frequency: Minimum frequency for a reduction to get a tag
         """
         self.language_utils = language_utils
-        self.encode_map = {}  # Maps reduction keys to tags (e.g., "0:[a]" → "⟨1⟩")
-        self.decode_map = {}  # Maps tags to reduction keys (e.g., "⟨1⟩" → "0:[a]")
+        self.encode_map = {}  # Maps reduction keys to CJK chars (e.g., "0:[a]" → "一")
+        self.decode_map = {}  # Maps CJK chars to reduction keys (e.g., "一" → "0:[a]")
         self.counter = 1
         self.min_frequency = min_frequency
         self.stats = {
@@ -66,7 +66,7 @@ class SplinterTrainer:
         Ge'ez-specific algorithm:
         1. Group words by consonant skeleton length
         2. For each position in skeleton, find common vowel patterns
-        3. Create tags for frequent vowel patterns
+        3. Create single-character CJK tags for frequent vowel patterns
         
         Args:
             dataset_path: Path to dataset (local directory)
@@ -185,25 +185,37 @@ class SplinterTrainer:
         get_logger().info(f"  Found {len(pattern_candidates)} frequent vowel patterns")
         
         # ============================================================
-        # Create tags for frequent patterns
+        # DIRECT CJK ASSIGNMENT - NO BRACKETS, NO TAG MAPPER
         # ============================================================
-        get_logger().info(f"Creating tags for patterns with frequency >= {self.min_frequency}...")
+        get_logger().info(f"Creating direct CJK mappings for patterns with frequency >= {self.min_frequency}...")
         
-        tags_created = 0
+        # Get all required reduction keys from pattern candidates
+        all_required_reduction_keys = []
         for length, pos, order, count, percentage in pattern_candidates:
             vowel_marker = self.language_utils.VOWEL_SYMBOLS.get(order, f"[{order}]")
             reduction_key = f"{pos}:{vowel_marker}"
-            
-            if reduction_key not in self.encode_map:
-                tag = f"⟨{self.counter}⟩"
-                self.encode_map[reduction_key] = tag
-                self.decode_map[tag] = reduction_key
-                self.counter += 1
-                tags_created += 1
-                
-                get_logger().debug(f"  Created {tag} for {reduction_key} (count: {count}, {percentage:.1f}%)")
+            all_required_reduction_keys.append(reduction_key)
         
-        get_logger().info(f"  Created {tags_created} tags from {len(pattern_candidates)} patterns")
+        # Remove duplicates while preserving order
+        seen = set()
+        all_required_reduction_keys = [x for x in all_required_reduction_keys if not (x in seen or seen.add(x))]
+        
+        get_logger().info(f"Creating {len(all_required_reduction_keys)} direct CJK mappings")
+        
+        # DIRECT CJK ASSIGNMENT - start at U+4E00
+        self.encode_map = {}
+        self.decode_map = {}
+        
+        for i, key in enumerate(all_required_reduction_keys):
+            # Start at U+4E00 (First CJK character) and increment
+            cjk_char = chr(0x4E00 + i)
+            
+            # Store in maps
+            self.encode_map[key] = cjk_char
+            self.decode_map[cjk_char] = key
+        
+        get_logger().info(f"  Created {len(self.encode_map)} direct CJK mappings")
+        get_logger().info(f"  CJK range: U+4E00 to U+{0x4E00 + len(self.encode_map) - 1:04X}")
         
         # ============================================================
         # Also learn patterns for suffixes/prefixes (multi-character)
@@ -234,23 +246,20 @@ class SplinterTrainer:
                         pattern_str = ','.join(pattern_key)
                         affix_patterns[pattern_str] += freq
         
-        # Create tags for common affix patterns (optional)
+        # Create direct CJK mappings for common affix patterns
         affix_tags_created = 0
         for pattern, count in sorted(affix_patterns.items(), key=lambda x: x[1], reverse=True)[:20]:
-            if count >= self.min_frequency * 2:  # Higher threshold for multi-patterns
-                if pattern not in self.encode_map:
-                    tag = f"⟨{self.counter}⟩"
-                    self.encode_map[pattern] = tag
-                    self.decode_map[tag] = pattern
-                    self.counter += 1
-                    affix_tags_created += 1
-                    get_logger().debug(f"  Created {tag} for affix pattern '{pattern}' (count: {count})")
+            if count >= self.min_frequency * 2 and pattern not in self.encode_map:  # Higher threshold for multi-patterns
+                cjk_char = chr(0x4E00 + len(self.encode_map))
+                self.encode_map[pattern] = cjk_char
+                self.decode_map[cjk_char] = pattern
+                affix_tags_created += 1
+                get_logger().debug(f"  Created CJK char '{cjk_char}' for affix pattern '{pattern}' (count: {count})")
         
         if affix_tags_created > 0:
-            get_logger().info(f"  Created {affix_tags_created} affix pattern tags")
+            get_logger().info(f"  Created {affix_tags_created} affix pattern mappings")
         
         get_logger().info(f"✓ Learned {len(self.encode_map)} total reduction rules")
-        get_logger().info(f"  Token range: ⟨1⟩ to ⟨{self.counter-1}⟩")
         
         # Print statistics
         self.print_statistics()
@@ -270,13 +279,7 @@ class SplinterTrainer:
     def get_word_dict(self, dataset_path, dataset_name):
         """
         Get or create word frequency dictionary from the corpus.
-        
-        Args:
-            dataset_path: Path to dataset (local directory)
-            dataset_name: Name of dataset
-            
-        Returns:
-            Dictionary mapping words to frequencies
+        FIXED: Process files line by line to avoid MemoryError
         """
         corpus_name = get_corpus_name(dataset_path, dataset_name)
         dict_path = os.path.join(get_words_dict_dir(), f'{corpus_name}.json')
@@ -284,22 +287,47 @@ class SplinterTrainer:
         if not os.path.exists(dict_path):
             get_logger().info(f'Creating word dictionary from {dataset_path}')
             
-            # Load from local files
-            texts = self.load_local_files(dataset_path)
-            words_dict = {}
+            if not os.path.exists(dataset_path):
+                get_logger().error(f"Dataset path not found: {dataset_path}")
+                return {}
             
-            for text in texts:
-                # Split into words and count frequencies
-                for word in text.split():
-                    word = word.strip()
-                    if word:
-                        words_dict[word] = words_dict.get(word, 0) + 1
+            words_dict = {}
+            file_count = 0
+            total_words = 0
+            
+            # Walk through all files
+            for root, dirs, files in os.walk(dataset_path):
+                for file in files:
+                    if file.endswith('.txt'):
+                        file_path = os.path.join(root, file)
+                        try:
+                            # Process file line by line - THIS PREVENTS MEMORYERROR
+                            with open(file_path, 'r', encoding='utf-8') as f:
+                                for line in f:
+                                    line = line.strip()
+                                    if not line:
+                                        continue
+                                    
+                                    # Split line into words and count
+                                    for word in line.split():
+                                        word = word.strip()
+                                        if word:
+                                            words_dict[word] = words_dict.get(word, 0) + 1
+                                            total_words += 1
+                            
+                            file_count += 1
+                            if file_count % 10 == 0:
+                                get_logger().info(f"  Processed {file_count} files, {len(words_dict)} unique words, {total_words} total words")
+                                
+                        except Exception as e:
+                            get_logger().warning(f"Error reading {file_path}: {e}")
             
             # Save dictionary
             os.makedirs(get_words_dict_dir(), exist_ok=True)
             with open(dict_path, 'w', encoding='utf-8') as f:
                 json.dump(words_dict, f, indent='\t', ensure_ascii=False)
-            get_logger().info(f"Saved word dictionary with {len(words_dict)} entries")
+            
+            get_logger().info(f"✅ Saved word dictionary with {len(words_dict)} unique words from {file_count} files")
         
         # Load from file
         with open(dict_path, 'r', encoding='utf-8') as f:
@@ -307,37 +335,10 @@ class SplinterTrainer:
 
     def load_local_files(self, directory_path):
         """
-        Load text from local files recursively.
-        
-        Args:
-            directory_path: Path to directory containing .txt files
-            
-        Returns:
-            List of text contents
+        Kept for compatibility - but not used in new version
         """
-        texts = []
-        if not os.path.exists(directory_path):
-            get_logger().warning(f"Directory not found: {directory_path}")
-            return texts
-        
-        file_count = 0
-        for root, dirs, files in os.walk(directory_path):
-            for file in files:
-                if file.endswith('.txt'):
-                    path = os.path.join(root, file)
-                    try:
-                        with open(path, 'r', encoding='utf-8') as f:
-                            content = f.read()
-                            if content.strip():
-                                texts.append(content)
-                                file_count += 1
-                                if file_count % 10 == 0:
-                                    get_logger().info(f"  Loaded {file_count} files...")
-                    except Exception as e:
-                        get_logger().warning(f"Error reading {path}: {e}")
-        
-        get_logger().info(f"Loaded {file_count} files from {directory_path}")
-        return texts
+        get_logger().warning("load_local_files is deprecated - use get_word_dict instead")
+        return []
 
     def create_reductions_map(self):
         """
@@ -427,7 +428,7 @@ class SplinterTrainer:
         print("=" * 70)
         print(f"Total words processed: {self.stats['total_words']:,}")
         print(f"Unique reduction rules: {len(self.encode_map)}")
-        print(f"Tag range: ⟨1⟩ to ⟨{self.counter-1}⟩")
+        print(f"Direct CJK mapping range: U+4E00 to U+{0x4E00 + len(self.encode_map) - 1:04X}")
         print(f"Min frequency threshold: {self.min_frequency}")
         
         print("\nVowel Order Distribution:")
@@ -448,11 +449,11 @@ class SplinterTrainer:
                 percentage = (count / self.stats['total_syllables']) * 100
                 print(f"  {vowel}: {count:,} ({percentage:.1f}%)")
         
-        print("\nTop 15 most frequent reduction patterns:")
+        print("\nTop 15 most frequent reduction patterns (mapped to CJK chars):")
         sorted_red = sorted(self.stats['reduction_frequencies'].items(), 
                            key=lambda x: x[1], reverse=True)[:15]
         for red, freq in sorted_red:
-            tag = self.encode_map.get(red, "unknown")
-            print(f"  {red:15} → {tag:8} : {freq:6} times")
+            cjk_char = self.encode_map.get(red, "?")
+            print(f"  {red:15} → '{cjk_char}' (U+{ord(cjk_char):04X}) : {freq:6} times")
         
         print("\n" + "=" * 70)
